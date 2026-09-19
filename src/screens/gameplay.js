@@ -4,8 +4,12 @@ import { NoteTrack, applyMeterShift } from '../noteTrack.js';
 import { renderResults } from './results.js';
 import { renderSongSelect } from './songSelect.js';
 
-const TRAVEL_TIME = 1.5; // seconds a note takes to fall from top to the hit line
-const LANE_COLORS = ['#ff6b6b', '#4fc3f7', '#81c784', '#ffd54f'];
+const TRAVEL_TIME = 1.5; // seconds a note takes to rise from the bottom to the receptor row
+const RECEPTOR_Y_RATIO = 0.16; // receptors sit near the top, FNF-style
+const FLASH_DURATION = 140; // ms a receptor stays "pressed" after a hit
+// left, down, up, right — matches ARROW_KEYS / WASD_KEYS lane order
+const LANE_COLORS = ['#c650ff', '#00c2ff', '#3ddc84', '#ff4d5e'];
+const LANE_ANGLES = [180, 90, -90, 0]; // degrees to rotate a right-pointing chevron per lane
 const LANE_GLYPHS = ['←', '↓', '↑', '→'];
 
 const ARROW_KEYS = ['ArrowLeft', 'ArrowDown', 'ArrowUp', 'ArrowRight'];
@@ -75,7 +79,9 @@ export function renderGameplay(container, song, mode = 'cpu') {
     });
   }
 
-  function handleResult(config, result) {
+  function handleResult(config, note) {
+    const result = note.result;
+    config.flash[note.lane] = performance.now() + FLASH_DURATION;
     if (meterEnabled) {
       const weight = config.track.isAuto ? cpuDrainWeight : 1;
       meter = applyMeterShift(meter, result, config.side === 'left' ? 'left' : 'right', weight);
@@ -89,8 +95,8 @@ export function renderGameplay(container, song, mode = 'cpu') {
   function handleInput(config, lane) {
     if (!started || finished) return;
     const now = synth.ctx.currentTime - startTime;
-    const result = config.track.hit(lane, now);
-    if (result) handleResult(config, result);
+    const note = config.track.hit(lane, now);
+    if (note) handleResult(config, note);
   }
 
   wrap.querySelectorAll('.lane-btn').forEach((btn) => {
@@ -135,45 +141,29 @@ export function renderGameplay(container, song, mode = 'cpu') {
   }
 
   function drawTrack(config, now) {
-    const [x0, x1] = config.region;
-    const regionX = x0 * canvas.width;
-    const regionWidth = (x1 - x0) * canvas.width;
-    const hitY = canvas.height * 0.85;
-    const laneWidth = regionWidth / 4;
-    const noteRadius = laneWidth * 0.28;
+    const receptorY = canvas.height * RECEPTOR_Y_RATIO;
+    const spawnY = canvas.height * 1.08;
+    const laneWidth = ((config.region[1] - config.region[0]) * canvas.width) / 4;
+    const noteRadius = Math.min(laneWidth * 0.32, canvas.height * 0.045);
+    const nowMs = performance.now();
 
-    ctx2d.strokeStyle = 'rgba(255,255,255,0.15)';
-    ctx2d.lineWidth = 2;
-    for (let i = 1; i < 4; i++) {
-      const x = regionX + (i / 4) * regionWidth;
-      ctx2d.beginPath();
-      ctx2d.moveTo(x, 0);
-      ctx2d.lineTo(x, canvas.height);
-      ctx2d.stroke();
+    for (let lane = 0; lane < 4; lane++) {
+      const x = laneX(config, lane, canvas.width);
+      const flashing = nowMs < config.flash[lane];
+      drawArrow(ctx2d, x, receptorY, flashing ? noteRadius * 1.15 : noteRadius, lane, {
+        color: LANE_COLORS[lane],
+        alpha: flashing ? 1 : 0.4,
+        outline: !flashing,
+      });
     }
-
-    ctx2d.strokeStyle = '#ffd35c';
-    ctx2d.lineWidth = 4;
-    ctx2d.beginPath();
-    ctx2d.moveTo(regionX, hitY);
-    ctx2d.lineTo(regionX + regionWidth, hitY);
-    ctx2d.stroke();
 
     config.track.notes.forEach((n) => {
       if (n.judged) return;
       const progress = 1 - (n.time - now) / TRAVEL_TIME;
       if (progress < -0.05 || progress > 1.15) return;
-      const y = progress * hitY;
+      const y = spawnY - progress * (spawnY - receptorY);
       const x = laneX(config, n.lane, canvas.width);
-      ctx2d.fillStyle = LANE_COLORS[n.lane];
-      ctx2d.beginPath();
-      ctx2d.arc(x, y, noteRadius, 0, Math.PI * 2);
-      ctx2d.fill();
-      ctx2d.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx2d.font = `bold ${noteRadius}px sans-serif`;
-      ctx2d.textAlign = 'center';
-      ctx2d.textBaseline = 'middle';
-      ctx2d.fillText(LANE_GLYPHS[n.lane], x, y);
+      drawArrow(ctx2d, x, y, noteRadius, n.lane, { color: LANE_COLORS[n.lane], alpha: 1, outline: false });
     });
   }
 
@@ -181,8 +171,8 @@ export function renderGameplay(container, song, mode = 'cpu') {
     ctx2d.clearRect(0, 0, canvas.width, canvas.height);
     configs.forEach((c) => drawTrack(c, now));
     if (configs.length > 1) {
-      ctx2d.strokeStyle = 'rgba(255,255,255,0.3)';
-      ctx2d.lineWidth = 3;
+      ctx2d.strokeStyle = 'rgba(255,255,255,0.2)';
+      ctx2d.lineWidth = 2;
       ctx2d.beginPath();
       ctx2d.moveTo(canvas.width / 2, 0);
       ctx2d.lineTo(canvas.width / 2, canvas.height);
@@ -221,8 +211,8 @@ export function renderGameplay(container, song, mode = 'cpu') {
     const now = synth.ctx.currentTime - startTime;
 
     configs.forEach((config) => {
-      const results = config.track.update(now);
-      results.forEach((result) => handleResult(config, result));
+      const judgedNotes = config.track.update(now);
+      judgedNotes.forEach((note) => handleResult(config, note));
     });
     refreshHud();
     if (meterEnabled && meterFillEl) meterFillEl.style.left = meter + '%';
@@ -274,19 +264,55 @@ export function renderGameplay(container, song, mode = 'cpu') {
 
 function buildConfigs(song, mode) {
   if (mode === 'practice') {
-    return [{ side: 'solo', hudKey: 'right', label: 'Practice', keys: ARROW_KEYS, track: new NoteTrack(song), region: [0, 1] }];
+    return [{ side: 'solo', hudKey: 'right', label: 'Practice', keys: ARROW_KEYS, track: new NoteTrack(song), region: [0, 1], flash: [0, 0, 0, 0] }];
   }
   if (mode === 'twoPlayer') {
     return [
-      { side: 'left', hudKey: 'left', label: 'Player 1', keys: ARROW_KEYS, track: new NoteTrack(song), region: [0, 0.5] },
-      { side: 'right', hudKey: 'right', label: 'Player 2', keys: WASD_KEYS, track: new NoteTrack(song), region: [0.5, 1] },
+      { side: 'left', hudKey: 'left', label: 'Player 1', keys: ARROW_KEYS, track: new NoteTrack(song), region: [0, 0.5], flash: [0, 0, 0, 0] },
+      { side: 'right', hudKey: 'right', label: 'Player 2', keys: WASD_KEYS, track: new NoteTrack(song), region: [0.5, 1], flash: [0, 0, 0, 0] },
     ];
   }
   // 'cpu' mode
   return [
-    { side: 'left', hudKey: 'left', label: 'CPU 🤖', keys: null, track: new NoteTrack(song, { isAuto: true }), region: [0, 0.5] },
-    { side: 'right', hudKey: 'right', label: 'You', keys: ARROW_KEYS, track: new NoteTrack(song), region: [0.5, 1] },
+    { side: 'left', hudKey: 'left', label: 'CPU 🤖', keys: null, track: new NoteTrack(song, { isAuto: true }), region: [0, 0.5], flash: [0, 0, 0, 0] },
+    { side: 'right', hudKey: 'right', label: 'You', keys: ARROW_KEYS, track: new NoteTrack(song), region: [0.5, 1], flash: [0, 0, 0, 0] },
   ];
+}
+
+// Draws a colored arrow "note": a circular body with a chevron pointing in the
+// lane's direction. outline:true draws a dim receptor-style ring instead of a
+// filled note (used for the static targets at the top of each lane).
+function drawArrow(ctx, x, y, radius, lane, { color, alpha = 1, outline = false }) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(x, y);
+
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  if (outline) {
+    ctx.lineWidth = radius * 0.22;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.lineWidth = radius * 0.16;
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.stroke();
+  }
+
+  ctx.rotate((LANE_ANGLES[lane] * Math.PI) / 180);
+  const s = radius * 0.85;
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.32, -s * 0.42);
+  ctx.lineTo(s * 0.45, 0);
+  ctx.lineTo(-s * 0.32, s * 0.42);
+  ctx.lineTo(-s * 0.05, 0);
+  ctx.closePath();
+  ctx.fillStyle = outline ? color : 'rgba(255,255,255,0.95)';
+  ctx.fill();
+
+  ctx.restore();
 }
 
 function hudTemplate(configs) {

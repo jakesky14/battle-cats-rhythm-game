@@ -106,8 +106,20 @@ html, body {
 .meter-wrap { padding: 6px 16px; background: rgba(0, 0, 0, 0.2); }
 .meter-bar { position: relative; height: 12px; border-radius: 8px; background: linear-gradient(90deg, #e05656, #4fc3f7); }
 .meter-fill { position: absolute; top: 50%; left: 50%; width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 3px solid var(--ink); transform: translate(-50%, -50%); transition: left 0.15s linear; }
-#note-canvas { width: 100%; height: calc(100vh - 150px); display: block; background: radial-gradient(circle at 50% 20%, #3a2f57, #1c1730); }
-.judgement-pop { position: absolute; top: 38%; transform: translate(-50%, -50%) scale(0.5); font-size: 24px; font-weight: bold; opacity: 0; pointer-events: none; }
+#note-canvas {
+  width: 100%;
+  height: calc(100vh - 150px);
+  display: block;
+  background:
+    linear-gradient(0deg, rgba(0, 0, 0, 0.35) 0%, transparent 14%),
+    radial-gradient(ellipse 70% 40% at 18% 100%, rgba(255, 150, 70, 0.35), transparent 60%),
+    radial-gradient(ellipse 70% 40% at 82% 100%, rgba(130, 90, 255, 0.35), transparent 60%),
+    radial-gradient(circle at 50% 6%, rgba(255, 255, 255, 0.14), transparent 55%),
+    repeating-radial-gradient(circle at 12% 14%, rgba(255, 255, 255, 0.06) 0 1.5px, transparent 1.5px 46px),
+    linear-gradient(180deg, #201a3d 0%, #2c2354 45%, #3a2f66 75%, #1c1730 100%);
+  background-color: #1c1730;
+}
+.judgement-pop { position: absolute; top: 26%; transform: translate(-50%, -50%) scale(0.5); font-size: 24px; font-weight: bold; opacity: 0; pointer-events: none; text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5); }
 .judgement-pop.left { left: 25%; }
 .judgement-pop.right { left: 75%; }
 .gameplay-screen.solo .judgement-pop.right { left: 50%; font-size: 28px; }

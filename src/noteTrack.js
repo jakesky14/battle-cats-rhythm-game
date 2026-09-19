@@ -42,7 +42,7 @@ export class NoteTrack {
     }
     this.maxCombo = Math.max(this.maxCombo, this.combo);
     this.lastJudgement = { result, delta };
-    return result;
+    return note; // note.result and note.lane let the caller show feedback in the right spot
   }
 
   // Player input: find the closest unjudged note in this lane within the OK window.
@@ -63,18 +63,18 @@ export class NoteTrack {
   }
 
   // Called every frame: auto-hits notes on schedule (CPU) or auto-misses notes
-  // the player let pass. Returns the list of results judged this tick.
+  // the player let pass. Returns the judged notes from this tick.
   update(now) {
-    const results = [];
+    const judged = [];
     this.notes.forEach((n) => {
       if (n.judged) return;
       if (this.isAuto) {
-        if (now >= n.time) results.push(this.judge(n, 0));
+        if (now >= n.time) judged.push(this.judge(n, 0));
       } else if (now - n.time > OK_WINDOW) {
-        results.push(this.judge(n, now - n.time));
+        judged.push(this.judge(n, now - n.time));
       }
     });
-    return results;
+    return judged;
   }
 
   get accuracy() {
